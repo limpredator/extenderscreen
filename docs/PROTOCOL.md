@@ -41,6 +41,16 @@ byte    payload[length]
 | 0x01 | VIDEO_FRAME  | server -> client| one H.264 access unit, Annex-B start codes |
 | 0x02 | TOUCH_EVENT  | client -> server| see below (not read by server yet, phase 3)|
 | 0x03 | PING         | either           | empty, keepalive                           |
+| 0x04 | STREAM_INFO  | server -> client| same shape as the handshake's width/height/fps (12 bytes, big-endian) |
+
+`STREAM_INFO` is sent mid-stream (after the initial handshake) when the
+source geometry changes while a viewer stays connected — e.g. the Windows
+side moved/resized/reoriented the virtual monitor live. A client should
+treat it exactly like the handshake's info and reconfigure its decoder
+before the next keyframe; a client that ignores it entirely is still safe
+as long as its decoder derives actual dimensions from each access unit's
+own SPS (true for VideoToolbox on iOS) rather than from a size set once at
+connect time (not true for Android's MediaCodec, which needs this).
 
 `VIDEO_FRAME` payload is exactly what ffmpeg writes to its Annex-B output for
 one access unit: it may contain multiple NAL units back to back (e.g. an IDR

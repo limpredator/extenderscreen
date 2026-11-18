@@ -22,6 +22,7 @@ public sealed class TrayAppContext : ApplicationContext
     private readonly ToolStripMenuItem _stopItem;
     private readonly LogForm _logForm = new();
     private readonly SenderService _service;
+    private readonly DisplayChangeWatcher _displayWatcher = new();
 
     public TrayAppContext()
     {
@@ -35,6 +36,7 @@ public sealed class TrayAppContext : ApplicationContext
             try { File.AppendAllText(logPath, line + Environment.NewLine); } catch { /* best effort */ }
         };
         _service.StatusChanged += status => SetStatus(status);
+        _displayWatcher.DisplayChanged += () => _service.RestartCaptureForDisplayChange();
 
         _statusItem = new ToolStripMenuItem("Status: starting…") { Enabled = false };
         _startItem = new ToolStripMenuItem("Start streaming", null, (_, _) => _service.Start());
@@ -86,6 +88,7 @@ public sealed class TrayAppContext : ApplicationContext
     private void ExitApp()
     {
         _service.Stop();
+        _displayWatcher.Dispose();
         _trayIcon.Visible = false;
         Application.Exit();
     }

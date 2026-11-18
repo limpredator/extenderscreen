@@ -109,6 +109,61 @@ public sealed class SenderService
         }
     }
 
+    /// Called when Windows reports a display change (see
+    /// DisplayChangeWatcher) while a viewer is connected. gdigrab's capture
+    /// region is fixed for the life of the ffmpeg process, so a resolution,
+    /// position, scale, or orientation change made live would otherwise
+    /// desync the capture from the desktop until the next manual
+    /// disconnect/reconnect — this re-detects the current geometry and
+    /// restarts just the capture, keeping the viewer connected throughout
+    /// (the iPad/Android decoder picks up the new size from the next
+    /// keyframe's SPS, no reconnect needed on that side).
+    public void RestartCaptureForDisplayChange()
+    {
+        lock (_captureLock)
+        {
+            if (_ffmpeg is null) return; // not currently streaming, nothing to resync
+            if (_options.IsPrimaryDevice || _options.DeviceName is not { } name) return;
+            if (VirtualMonitorFinder.ResolveScreen(name) is not { } screen) return;
+
+            var (width, height) = (screen.Bounds.Width, screen.Bounds.Height);
+            if (width == _options.Width && height == _options.Height
+                && screen.Bounds.X == _options.OffsetX && screen.Bounds.Y == _options.OffsetY)
+            {
+                return; // nothing actually changed for this device (some unrelated display changed)
+            }
+
+            Log($"Display geometry changed ({_options.Width}x{_options.Height} -> {width}x{height}) — restarting capture");
+
+            _captureCts?.Cancel();
+            try { if (!_ffmpeg.HasExited) _ffmpeg.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            _ffmpeg = null;
+
+            _options.Width = width;
+            _options.Height = height;
+            _options.OffsetX = screen.Bounds.X;
+            _options.OffsetY = screen.Bounds.Y;
+            _options.Orientation = DisplayConfig.GetLastConfiguredMode(name)?.orientation ?? _options.Orientation;
+            (_options.Fps, _options.BitrateKbps) = TierFor(width, height);
+
+            bool ok = DisplayConfig.Attach(name, _options.Width, _options.Height, _options.OffsetX, _options.OffsetY, Math.Min(_options.Fps, 60), _options.Orientation);
+            Log(ok ? $"Monitor re-attached ({name})" : $"Warning: failed to re-attach monitor {name} — it may already be attached, continuing anyway");
+
+            // Tell the still-connected viewer the new geometry before frames
+            // at that geometry start arriving — required for Android, whose
+            // decoder is configured against an explicit width/height rather
+            // than deriving it from each access unit's own SPS (iOS does
+            // the latter, so this is a no-op there, but harmless either way).
+            _hub!.SendStreamInfo(_options.Width, _options.Height, _options.Fps);
+
+            _captureCts = new CancellationTokenSource();
+            var capCt = _captureCts.Token;
+            _ffmpeg = StartFfmpeg(_options);
+            Task.Run(() => PumpFfmpegOutput(_ffmpeg, _hub!, capCt), capCt);
+            Task.Run(() => PumpFfmpegStderr(_ffmpeg));
+        }
+    }
+
     private void OnClientDisconnected()
     {
         StopCaptureLocked();

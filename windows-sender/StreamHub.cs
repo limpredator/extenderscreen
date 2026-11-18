@@ -13,11 +13,12 @@ namespace ExtendedScreen.Sender;
 public sealed class StreamHub
 {
     private const byte MsgVideoFrame = 0x01;
+    private const byte MsgStreamInfo = 0x04;
 
     private readonly object _lock = new();
-    private readonly int _width;
-    private readonly int _height;
-    private readonly int _fps;
+    private int _width;
+    private int _height;
+    private int _fps;
 
     private TcpClient? _client;
     private NetworkStream? _stream;
@@ -77,6 +78,39 @@ public sealed class StreamHub
             try
             {
                 WriteMessage(_stream, MsgVideoFrame, accessUnit);
+            }
+            catch (IOException)
+            {
+                DropCurrentClientLocked();
+                droppedClient = true;
+            }
+        }
+
+        if (droppedClient) ClientDisconnected?.Invoke();
+    }
+
+    /// Tells the still-connected client the geometry changed (see
+    /// SenderService.RestartCaptureForDisplayChange and docs/PROTOCOL.md's
+    /// STREAM_INFO). Safe to call even if nothing's connected right now.
+    public void SendStreamInfo(int width, int height, int fps)
+    {
+        bool droppedClient = false;
+        lock (_lock)
+        {
+            _width = width;
+            _height = height;
+            _fps = fps;
+
+            if (_stream is null) return;
+
+            Span<byte> payload = stackalloc byte[12];
+            BinaryPrimitives.WriteUInt32BigEndian(payload, (uint)width);
+            BinaryPrimitives.WriteUInt32BigEndian(payload[4..], (uint)height);
+            BinaryPrimitives.WriteUInt32BigEndian(payload[8..], (uint)fps);
+
+            try
+            {
+                WriteMessage(_stream, MsgStreamInfo, payload.ToArray());
             }
             catch (IOException)
             {

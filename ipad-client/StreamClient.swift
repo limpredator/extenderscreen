@@ -120,6 +120,18 @@ final class StreamClient {
                 buffer.removeFirst(length)
                 if type == 0x01 {
                     delegate?.streamClient(self, didReceiveAccessUnit: Data(payload))
+                } else if type == 0x04, payload.count >= 12 {
+                    // STREAM_INFO (see docs/PROTOCOL.md): sent mid-stream
+                    // when the source geometry changes on a live
+                    // disconnect-free restart. VideoToolbox derives actual
+                    // decode dimensions from each access unit's own SPS, so
+                    // this isn't required for correct decoding here (unlike
+                    // Android's MediaCodec) — forwarded anyway to keep
+                    // StreamViewModel.videoSize accurate.
+                    let width = readUInt32BE(payload, at: payload.startIndex)
+                    let height = readUInt32BE(payload, at: payload.startIndex + 4)
+                    let fps = readUInt32BE(payload, at: payload.startIndex + 8)
+                    delegate?.streamClient(self, didReceiveVideoStreamInfo: Int(width), height: Int(height), fps: Int(fps))
                 }
                 state = .waitingForMessageHeader
             }

@@ -67,8 +67,26 @@ class StreamClient(private val listener: Listener) {
                 val length = input.readInt()
                 val payload = ByteArray(length)
                 input.readFully(payload)
-                if (type == 0x01) {
-                    listener.onAccessUnit(payload)
+                when (type) {
+                    0x01 -> listener.onAccessUnit(payload)
+                    // STREAM_INFO (see docs/PROTOCOL.md): sent mid-stream
+                    // when the source geometry changes on a live
+                    // disconnect-free restart (e.g. the Windows virtual
+                    // monitor got resized/repositioned while connected).
+                    // MediaCodec is configured against an explicit
+                    // width/height rather than deriving it from each
+                    // access unit's own SPS, so without this the decoder
+                    // would keep decoding at the old size and the picture
+                    // would come out corrupted/misaligned.
+                    0x04 -> {
+                        val width = ((payload[0].toInt() and 0xFF) shl 24) or ((payload[1].toInt() and 0xFF) shl 16) or
+                            ((payload[2].toInt() and 0xFF) shl 8) or (payload[3].toInt() and 0xFF)
+                        val height = ((payload[4].toInt() and 0xFF) shl 24) or ((payload[5].toInt() and 0xFF) shl 16) or
+                            ((payload[6].toInt() and 0xFF) shl 8) or (payload[7].toInt() and 0xFF)
+                        val fps = ((payload[8].toInt() and 0xFF) shl 24) or ((payload[9].toInt() and 0xFF) shl 16) or
+                            ((payload[10].toInt() and 0xFF) shl 8) or (payload[11].toInt() and 0xFF)
+                        listener.onStreamInfo(width, height, fps)
+                    }
                 }
             }
             listener.onDisconnected(null)
