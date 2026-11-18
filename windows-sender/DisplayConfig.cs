@@ -13,6 +13,7 @@ namespace ExtendedScreen.Sender;
 internal static class DisplayConfig
 {
     private const int DM_POSITION = 0x00000020;
+    private const int DM_DISPLAYORIENTATION = 0x00000080;
     private const int DM_PELSWIDTH = 0x00080000;
     private const int DM_PELSHEIGHT = 0x00100000;
     private const int DM_BITSPERPEL = 0x00040000;
@@ -69,31 +70,42 @@ internal static class DisplayConfig
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "EnumDisplaySettingsW")]
     private static extern bool EnumDisplaySettingsExRegistry(string lpszDeviceName, int iModeNum, ref DEVMODE lpDevMode);
 
-    /// Reads the resolution Windows has stored for this device even while
-    /// it's currently detached from the desktop (and so missing from
-    /// Screen.AllScreens) — the registry keeps the last-configured DEVMODE
-    /// per device regardless of attach state. Lets AutoDetect re-attach at
-    /// the resolution you actually picked in Display Settings, instead of
-    /// a hardcoded guess.
-    public static (int width, int height)? GetLastConfiguredResolution(string deviceName)
+    /// Reads the resolution AND orientation Windows has stored for this
+    /// device even while it's currently detached from the desktop (and so
+    /// missing from Screen.AllScreens) — the registry keeps the
+    /// last-configured DEVMODE per device regardless of attach state. Lets
+    /// AutoDetect re-attach at what you actually picked in Display
+    /// Settings, instead of a hardcoded landscape guess. dmPelsWidth/Height
+    /// here already reflect the CURRENT orientation (e.g. 1640x2360 for a
+    /// portrait-rotated 2360x1640 panel) — orientation must be passed back
+    /// into Attach() together with them, since requesting portrait
+    /// dimensions with an implied landscape orientation is not a valid
+    /// mode and silently fails (confirmed live: "failed to attach monitor"
+    /// + ffmpeg's capture area landing outside the desktop entirely).
+    public static (int width, int height, int orientation)? GetLastConfiguredMode(string deviceName)
     {
         var dm = new DEVMODE { dmSize = (short)Marshal.SizeOf<DEVMODE>() };
         if (!EnumDisplaySettingsExRegistry(deviceName, ENUM_REGISTRY_SETTINGS, ref dm)) return null;
         if (dm.dmPelsWidth <= 0 || dm.dmPelsHeight <= 0) return null;
-        return (dm.dmPelsWidth, dm.dmPelsHeight);
+        return (dm.dmPelsWidth, dm.dmPelsHeight, dm.dmDisplayOrientation);
     }
 
-    /// Reattaches the device at the given position/resolution and extends
-    /// the desktop onto it. Returns true on success.
-    public static bool Attach(string deviceName, int width, int height, int x, int y, int frequency = 60)
+    /// Reattaches the device at the given position/resolution/orientation
+    /// and extends the desktop onto it. orientation is a DMDO_* value (0 =
+    /// default/landscape, 1 = 90° portrait, 2 = 180°, 3 = 270°) — width and
+    /// height must already be given AS ROTATED (matching what
+    /// GetLastConfiguredMode / Windows Settings reports), not the panel's
+    /// native landscape dimensions. Returns true on success.
+    public static bool Attach(string deviceName, int width, int height, int x, int y, int frequency = 60, int orientation = 0)
     {
         var dm = new DEVMODE
         {
             dmDeviceName = string.Empty,
             dmFormName = string.Empty,
             dmSize = (short)Marshal.SizeOf<DEVMODE>(),
-            dmFields = DM_POSITION | DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL | DM_DISPLAYFREQUENCY,
+            dmFields = DM_POSITION | DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL | DM_DISPLAYFREQUENCY | DM_DISPLAYORIENTATION,
             dmPosition = new POINTL { x = x, y = y },
+            dmDisplayOrientation = orientation,
             dmPelsWidth = width,
             dmPelsHeight = height,
             dmBitsPerPel = 32,

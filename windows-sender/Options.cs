@@ -26,6 +26,14 @@ public sealed class Options
     /// never be attempted on it, that would black out your main display.
     public bool IsPrimaryDevice;
 
+    /// DMDO_* orientation (0 = landscape/default, 1 = 90°, 2 = 180°,
+    /// 3 = 270°) the monitor is configured for in Windows. Width/Height
+    /// above are already the AS-ROTATED dimensions (e.g. 1640x2360 for a
+    /// 2360x1640 panel rotated to portrait) — Attach() needs this passed
+    /// back alongside them, since requesting rotated dimensions with an
+    /// implied landscape orientation isn't a valid mode and fails silently.
+    public int Orientation;
+
     public static Options? Parse(string[] args)
     {
         var o = new Options();

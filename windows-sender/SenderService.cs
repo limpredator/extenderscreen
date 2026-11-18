@@ -93,7 +93,7 @@ public sealed class SenderService
 
             if (!_options.IsPrimaryDevice && _options.DeviceName is { } name)
             {
-                bool ok = DisplayConfig.Attach(name, _options.Width, _options.Height, _options.OffsetX, _options.OffsetY, Math.Min(_options.Fps, 60));
+                bool ok = DisplayConfig.Attach(name, _options.Width, _options.Height, _options.OffsetX, _options.OffsetY, Math.Min(_options.Fps, 60), _options.Orientation);
                 Log(ok ? $"Monitor attached ({name})" : $"Warning: failed to attach monitor {name} — it may already be attached, continuing anyway");
             }
 
@@ -378,7 +378,7 @@ public sealed class SenderService
     {
         var found = VirtualMonitorFinder.Find();
         string deviceName;
-        int width, height, offsetX, offsetY;
+        int width, height, offsetX, offsetY, orientation;
         bool isPrimary;
         string? warning;
 
@@ -387,6 +387,9 @@ public sealed class SenderService
             deviceName = f.DeviceName;
             (width, height) = (vddScreen.Bounds.Width, vddScreen.Bounds.Height);
             (offsetX, offsetY) = (vddScreen.Bounds.X, vddScreen.Bounds.Y);
+            // Screen.Bounds has no orientation field — read it alongside
+            // (same registry entry, so it matches what Bounds reported).
+            orientation = DisplayConfig.GetLastConfiguredMode(f.DeviceName)?.orientation ?? 0;
             isPrimary = f.IsPrimary;
             warning = f.IsPrimary
                 ? "The virtual monitor is currently set as your Windows primary display — skipping auto attach/detach for safety. Set your real monitor as primary in Display Settings to enable it."
@@ -397,12 +400,13 @@ public sealed class SenderService
             // Installed, identified, but not currently extended onto the
             // desktop (the expected idle state) — Screen.AllScreens has no
             // entry for it here, but Windows still remembers the last
-            // resolution you configured for this device in the registry
-            // even while detached, so re-attach at THAT instead of a
-            // hardcoded guess. Only falls back to 1080p if nothing's ever
-            // been configured for it (e.g. brand new install).
+            // resolution AND orientation you configured for this device in
+            // the registry even while detached, so re-attach at THAT
+            // instead of a hardcoded landscape guess. Only falls back to
+            // 1080p landscape if nothing's ever been configured (e.g.
+            // brand new install).
             deviceName = f2.DeviceName;
-            (width, height) = DisplayConfig.GetLastConfiguredResolution(f2.DeviceName) ?? (1920, 1080);
+            (width, height, orientation) = DisplayConfig.GetLastConfiguredMode(f2.DeviceName) ?? (1920, 1080, 0);
             var primaryBounds = (Screen.PrimaryScreen ?? Screen.AllScreens[0]).Bounds;
             (offsetX, offsetY) = (primaryBounds.Right, primaryBounds.Y);
             isPrimary = false;
@@ -414,6 +418,7 @@ public sealed class SenderService
             deviceName = primary.DeviceName;
             (width, height) = (primary.Bounds.Width, primary.Bounds.Height);
             (offsetX, offsetY) = (primary.Bounds.X, primary.Bounds.Y);
+            orientation = 0;
             isPrimary = true;
             warning = "No virtual display driver found — mirroring your primary screen instead. Set up the virtual display driver (see README) for true extend mode.";
         }
@@ -432,6 +437,7 @@ public sealed class SenderService
             Port = port,
             DeviceName = deviceName,
             IsPrimaryDevice = isPrimary,
+            Orientation = orientation,
         };
         return (options, warning);
     }
