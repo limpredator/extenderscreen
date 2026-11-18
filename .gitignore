@@ -1,0 +1,17 @@
+bin/
+obj/
+publish/
+*.user
+.vs/
+*.log
+*.exe
+
+# Android / Gradle
+.gradle/
+.kotlin/
+build/
+*.iml
+.idea/
+local.properties
+*.apk
+*.ap_

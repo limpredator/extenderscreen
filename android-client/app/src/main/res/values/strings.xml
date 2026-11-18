@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">ExtendedScreen</string>
+    <string name="connect_hint">Enter the IP address shown by the ExtendedScreen sender on your PC</string>
+    <string name="ip_hint">PC IP address</string>
+    <string name="connect">Connect</string>
+    <string name="connect_usb">Connect via USB</string>
+    <string name="disconnect">Disconnect</string>
+</resources>
