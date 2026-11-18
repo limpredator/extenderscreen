@@ -395,10 +395,14 @@ public sealed class SenderService
         else if (found is { } f2)
         {
             // Installed, identified, but not currently extended onto the
-            // desktop (the expected idle state) — default to 1080p
-            // positioned right of whatever Windows considers primary now.
+            // desktop (the expected idle state) — Screen.AllScreens has no
+            // entry for it here, but Windows still remembers the last
+            // resolution you configured for this device in the registry
+            // even while detached, so re-attach at THAT instead of a
+            // hardcoded guess. Only falls back to 1080p if nothing's ever
+            // been configured for it (e.g. brand new install).
             deviceName = f2.DeviceName;
-            (width, height) = (1920, 1080);
+            (width, height) = DisplayConfig.GetLastConfiguredResolution(f2.DeviceName) ?? (1920, 1080);
             var primaryBounds = (Screen.PrimaryScreen ?? Screen.AllScreens[0]).Bounds;
             (offsetX, offsetY) = (primaryBounds.Right, primaryBounds.Y);
             isPrimary = false;

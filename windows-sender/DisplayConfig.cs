@@ -64,6 +64,25 @@ internal static class DisplayConfig
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "ChangeDisplaySettingsExW")]
     private static extern int ChangeDisplaySettingsExApply(IntPtr lpszDeviceNameNull, IntPtr lpDevModeNull, IntPtr hwnd, int dwflags, IntPtr lParam);
 
+    private const int ENUM_REGISTRY_SETTINGS = -1;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "EnumDisplaySettingsW")]
+    private static extern bool EnumDisplaySettingsExRegistry(string lpszDeviceName, int iModeNum, ref DEVMODE lpDevMode);
+
+    /// Reads the resolution Windows has stored for this device even while
+    /// it's currently detached from the desktop (and so missing from
+    /// Screen.AllScreens) — the registry keeps the last-configured DEVMODE
+    /// per device regardless of attach state. Lets AutoDetect re-attach at
+    /// the resolution you actually picked in Display Settings, instead of
+    /// a hardcoded guess.
+    public static (int width, int height)? GetLastConfiguredResolution(string deviceName)
+    {
+        var dm = new DEVMODE { dmSize = (short)Marshal.SizeOf<DEVMODE>() };
+        if (!EnumDisplaySettingsExRegistry(deviceName, ENUM_REGISTRY_SETTINGS, ref dm)) return null;
+        if (dm.dmPelsWidth <= 0 || dm.dmPelsHeight <= 0) return null;
+        return (dm.dmPelsWidth, dm.dmPelsHeight);
+    }
+
     /// Reattaches the device at the given position/resolution and extends
     /// the desktop onto it. Returns true on success.
     public static bool Attach(string deviceName, int width, int height, int x, int y, int frequency = 60)
