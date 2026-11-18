@@ -9,7 +9,11 @@ final class VideoDisplayUIView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        displayLayer.videoGravity = .resizeAspect
+        // .resizeAspectFill crops to fill the screen edge-to-edge (no
+        // letterbox bars) in both orientations, trading off a bit of the
+        // stream's edges being cropped when the aspect ratios don't match
+        // exactly — see the resolution-matching note in README.md.
+        displayLayer.videoGravity = .resizeAspectFill
         displayLayer.backgroundColor = UIColor.black.cgColor
         layer.addSublayer(displayLayer)
         backgroundColor = .black
