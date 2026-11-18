@@ -241,6 +241,7 @@ public sealed class SenderService
             {
                 var client = await listener.AcceptTcpClientAsync(ct);
                 client.NoDelay = true;
+                EnableFastKeepAlive(client);
                 Log($"Viewer connected from {client.Client.RemoteEndPoint}");
                 hub.AttachClient(client);
             }
@@ -250,6 +251,37 @@ public sealed class SenderService
         {
             listener.Stop();
         }
+    }
+
+    /// A clean disconnect (viewer taps Disconnect, or a USB cable is
+    /// unplugged) makes the next stream.Write throw almost immediately —
+    /// but a Wi-Fi drop (out of range, app backgrounded, router hiccup)
+    /// leaves the socket silently stuck with no error, which without this
+    /// would leave the virtual monitor attached for a long time (TCP's own
+    /// default retransmit timeout can be minutes). A short OS-level
+    /// keepalive makes a dead-but-silent connection fail fast instead —
+    /// first probe after 3s idle, then every 1s, so a genuinely gone
+    /// viewer gets detected (and the monitor detached) within ~8-10s.
+    private static void EnableFastKeepAlive(TcpClient client)
+    {
+        try
+        {
+            client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+            client.Client.IOControl(IOControlCode.KeepAliveValues, BuildKeepAliveSpec(), null);
+        }
+        catch { /* best effort — worst case we fall back to the old write-error detection */ }
+    }
+
+    private static byte[] BuildKeepAliveSpec()
+    {
+        const uint onOff = 1;
+        const uint keepAliveTimeMs = 3000;
+        const uint keepAliveIntervalMs = 1000;
+        var spec = new byte[12];
+        BitConverter.GetBytes(onOff).CopyTo(spec, 0);
+        BitConverter.GetBytes(keepAliveTimeMs).CopyTo(spec, 4);
+        BitConverter.GetBytes(keepAliveIntervalMs).CopyTo(spec, 8);
+        return spec;
     }
 
     /// Keeps retrying `adb reverse` every few seconds for as long as the
