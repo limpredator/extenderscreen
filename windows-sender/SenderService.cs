@@ -30,6 +30,7 @@ public sealed class SenderService
     private Process? _ffmpeg;
     private CancellationTokenSource? _captureCts;
     private bool _usbWasConnected;
+    private DateTime _lastSelfInitiatedDisplayChangeUtc = DateTime.MinValue;
 
     public SenderService(Options options)
     {
@@ -93,6 +94,7 @@ public sealed class SenderService
 
             if (!_options.IsPrimaryDevice && _options.DeviceName is { } name)
             {
+                _lastSelfInitiatedDisplayChangeUtc = DateTime.UtcNow;
                 bool ok = DisplayConfig.Attach(name, _options.Width, _options.Height, _options.OffsetX, _options.OffsetY, Math.Min(_options.Fps, 60), _options.Orientation);
                 Log(ok ? $"Monitor attached ({name})" : $"Warning: failed to attach monitor {name} — it may already be attached, continuing anyway");
             }
@@ -126,6 +128,16 @@ public sealed class SenderService
             if (_options.IsPrimaryDevice || _options.DeviceName is not { } name) return;
             if (VirtualMonitorFinder.ResolveScreen(name) is not { } screen) return;
 
+            // Our own Attach()/Detach() calls (connect, disconnect, and the
+            // restart below) themselves trigger WM_DISPLAYCHANGE — without
+            // this, that echo would re-trigger this same method, which
+            // could in turn attach again and trigger another echo. Treat
+            // anything within a couple seconds of our own last change as
+            // that echo, not a genuine user-initiated change, regardless
+            // of whether Windows' own position snapping made the geometry
+            // come back looking very slightly different.
+            if (DateTime.UtcNow - _lastSelfInitiatedDisplayChangeUtc < TimeSpan.FromSeconds(2)) return;
+
             var (width, height) = (screen.Bounds.Width, screen.Bounds.Height);
             if (width == _options.Width && height == _options.Height
                 && screen.Bounds.X == _options.OffsetX && screen.Bounds.Y == _options.OffsetY)
@@ -146,6 +158,7 @@ public sealed class SenderService
             _options.Orientation = DisplayConfig.GetLastConfiguredMode(name)?.orientation ?? _options.Orientation;
             (_options.Fps, _options.BitrateKbps) = TierFor(width, height);
 
+            _lastSelfInitiatedDisplayChangeUtc = DateTime.UtcNow;
             bool ok = DisplayConfig.Attach(name, _options.Width, _options.Height, _options.OffsetX, _options.OffsetY, Math.Min(_options.Fps, 60), _options.Orientation);
             Log(ok ? $"Monitor re-attached ({name})" : $"Warning: failed to re-attach monitor {name} — it may already be attached, continuing anyway");
 
@@ -183,6 +196,7 @@ public sealed class SenderService
 
             if (!_options.IsPrimaryDevice && _options.DeviceName is { } name)
             {
+                _lastSelfInitiatedDisplayChangeUtc = DateTime.UtcNow;
                 bool ok = DisplayConfig.Detach(name);
                 Log(ok ? $"Monitor detached ({name})" : $"Warning: failed to detach monitor {name}");
             }
